@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+README.md
+LICENSE
+*.pdf
+.pytest_cache
+.coverage
+htmlcov/
