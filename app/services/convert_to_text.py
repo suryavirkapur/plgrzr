@@ -13,8 +13,9 @@ class convert_to_text():
         processed_data = json.dumps(processed_data)
 
         return processed_data
-
-
+    
+    def apply_bounding_boxes(self):
+        pass
     
         
         
