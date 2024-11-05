@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.services.mathpix_service import MathpixService
-
+from app.services.convert_to_text import convert_to_text
 app = FastAPI(title="Mathpix PDF Processing API")
 
 app.add_middleware(
@@ -28,7 +28,12 @@ async def process_pdf(file: UploadFile):
         
         # Process with Mathpix
         result = await mathpix_service.process_pdf(file_content)
-        
+
+        result = convert_to_text(result).convert_pagewise()
+        #store local json also
+        with open("output.json", "w") as f:
+            f.write(result)
+
         return JSONResponse(content=result)
     
     except Exception as e:
