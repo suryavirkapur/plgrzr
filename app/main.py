@@ -7,7 +7,7 @@ app = FastAPI(title="Mathpix PDF Processing API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your React app's origin
+    allow_origins=["http://localhost:3000", "https://plgrzr.suryavirkapur.com"],  # Your React app's origin
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
