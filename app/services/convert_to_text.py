@@ -3,7 +3,7 @@ class convert_to_text():
     def __init__(self, result):
         self.result = result
     def convert_pagewise(self):
-        # Convert the result to a DataFrame
+
         processed_data = {}
         for page in self.result['pages']:
             page_number = f'Page_{page["page"]}'
