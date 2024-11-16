@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
 use pdf2image::{RenderOptionsBuilder, PDF};
+use rayon::prelude::*;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use walkdir::WalkDir;
 
-fn process_pdf(entry_path: &Path, target_dir: &str) -> Result<()> {
+fn process_pdf(entry_path: PathBuf, target_dir: &str) -> Result<()> {
     let filename = entry_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -20,7 +23,7 @@ fn process_pdf(entry_path: &Path, target_dir: &str) -> Result<()> {
 
     println!("Processing: {:?}", entry_path);
 
-    let pdf = PDF::from_file(entry_path).context("Failed to open PDF file")?;
+    let pdf = PDF::from_file(&entry_path).context("Failed to open PDF file")?;
 
     let render_options = RenderOptionsBuilder::default()
         .pdftocairo(true)
@@ -33,32 +36,30 @@ fn process_pdf(entry_path: &Path, target_dir: &str) -> Result<()> {
 
     println!("{} has {} pages", filename, pages.len());
 
-    for (i, page) in pages.iter().enumerate() {
+    pages.par_iter().enumerate().try_for_each(|(i, page)| {
         let output_path = format!("{}/{}_{}.jpg", output_folder, foldername, i + 1);
         page.save(&output_path)
-            .with_context(|| format!("Failed to save page {} to {}", i, output_path))?;
-    }
+            .with_context(|| format!("Failed to save page {} to {}", i, output_path))
+    })?;
 
     Ok(())
 }
 
 fn main() -> Result<()> {
     println!("Current directory: {:?}", std::env::current_dir().unwrap());
-    let source_dir = "/Users/suryavirkapur/Projekts/plgrzr/data/plgrzr_cleaned_dataset";
-    let target_dir = "/Users/suryavirkapur/Projekts/plgrzr/data/plgrzr_output";
+    let source_dir = "../../data/plgrzr_cleaned_dataset";
+    let target_dir = "../../data/plgrzr_output";
 
-    // Ensure source directory exists
     if !Path::new(source_dir).exists() {
         anyhow::bail!("Source directory does not exist: {}", source_dir);
     }
 
-    // Create target directory if it doesn't exist
     fs::create_dir_all(target_dir).context("Failed to create target directory")?;
 
-    let mut processed = 0;
-    let mut errors = 0;
+    let processed = Arc::new(AtomicUsize::new(0));
+    let errors = Arc::new(AtomicUsize::new(0));
 
-    for entry in WalkDir::new(source_dir)
+    let pdf_paths: Vec<PathBuf> = WalkDir::new(source_dir)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| {
@@ -67,44 +68,53 @@ fn main() -> Result<()> {
                     .extension()
                     .map_or(false, |ext| ext.eq_ignore_ascii_case("pdf"))
         })
-    {
-        println!("File exists check: {}", entry.path().exists());
-        println!("Is file check: {}", entry.path().is_file());
+        .map(|e| e.path().to_owned())
+        .collect();
 
-        // Try to read the file metadata
-        match fs::metadata(entry.path()) {
-            Ok(metadata) => println!("File size: {} bytes", metadata.len()),
-            Err(e) => println!("Error reading metadata: {}", e),
+    let total_files = pdf_paths.len();
+    println!("Found {} PDF files to process", total_files);
+
+    pdf_paths.par_iter().for_each(|path| {
+        let file_exists = path.exists();
+        let is_file = path.is_file();
+
+        println!("File exists check: {}", file_exists);
+        println!("Is file check: {}", is_file);
+
+        if let Ok(metadata) = fs::metadata(path) {
+            println!("File size: {} bytes", metadata.len());
         }
 
-        // Try to open the file directly
-        match fs::File::open(entry.path()) {
+        match fs::File::open(path) {
             Ok(_) => println!("Successfully opened file"),
             Err(e) => println!("Error opening file: {}", e),
         }
 
-        // Print the canonical path if possible
-        if let Ok(canonical_path) = fs::canonicalize(entry.path()) {
+        if let Ok(canonical_path) = fs::canonicalize(path) {
             println!("Canonical path: {:?}", canonical_path);
         }
 
-        match process_pdf(entry.path(), target_dir) {
+        match process_pdf(path.to_owned(), target_dir) {
             Ok(_) => {
-                processed += 1;
-                println!("Successfully processed: {:?}", entry.path());
+                processed.fetch_add(1, Ordering::SeqCst);
+                println!("Successfully processed: {:?}", path);
             }
             Err(e) => {
-                errors += 1;
-                eprintln!("Error processing {:?}: {:#}", entry.path(), e);
-                // Continue processing other files even if one fails
-                continue;
+                errors.fetch_add(1, Ordering::SeqCst);
+                eprintln!("Error processing {:?}: {:#}", path, e);
             }
         }
-    }
+    });
 
     println!("\nProcessing complete:");
-    println!("Successfully processed: {} files", processed);
-    println!("Errors encountered: {} files", errors);
+    println!(
+        "Successfully processed: {} files",
+        processed.load(Ordering::SeqCst)
+    );
+    println!(
+        "Errors encountered: {} files",
+        errors.load(Ordering::SeqCst)
+    );
 
     Ok(())
 }
