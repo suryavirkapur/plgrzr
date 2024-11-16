@@ -18,17 +18,13 @@ fn generate_cuid() -> String {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Define the source directory (current directory) and target directory
     let source_dir = "/Users/suryavirkapur/Desktop/Plgrzr Dataset";
     let target_dir = "../../data/plgrzr_cleaned_dataset";
 
-    // Create target directory if it doesn't exist
     fs::create_dir_all(target_dir)?;
 
-    // Keep track of processed files
     let mut processed_files = 0;
 
-    // Walk through all entries in the source directory
     for entry in WalkDir::new(source_dir)
         .follow_links(true)
         .into_iter()
@@ -41,18 +37,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .extension()
                 .map_or(false, |ext| ext.eq_ignore_ascii_case("pdf"))
         {
-            // Generate new filename with CUID
             let new_filename = format!("{}.pdf", generate_cuid());
 
-            // Create the target path
             let target_path = PathBuf::from(target_dir).join(&new_filename);
 
-            // Copy the file
-            println!(
-                "Copying {} to {}",
-                entry.path().display(),
-                target_path.display()
-            );
+            println!("Processed file {}", target_path.display());
             fs::copy(entry.path(), target_path)?;
 
             processed_files += 1;
