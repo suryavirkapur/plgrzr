@@ -130,6 +130,13 @@ class HandwritingAnalyzer:
             ]
         )
 
+    def compare_pages(self, page1_vector, page2_vector):
+        similarity = F.cosine_similarity(
+            torch.tensor(page1_vector).unsqueeze(0),
+            torch.tensor(page2_vector).unsqueeze(0),
+        ).item()
+        return similarity
+
     def extract_contour_features(self, word_img):
         gray = cv2.cvtColor(word_img, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -138,36 +145,72 @@ class HandwritingAnalyzer:
         )
 
         if not contours:
-            return np.zeros(5)
+            return np.zeros(8)
 
-        areas = [cv2.contourArea(cnt) for cnt in contours]
-        perimeters = [cv2.arcLength(cnt, True) for cnt in contours]
+        # Handwriting-specific features
+        features = []
 
-        features = [
-            np.mean(areas),
-            np.std(areas),
-            np.mean(perimeters),
-            np.std(perimeters),
-            len(contours),
-        ]
+        # Average stroke width
+        stroke_widths = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            perimeter = cv2.arcLength(cnt, True)
+            if perimeter > 0:
+                stroke_widths.append(
+                    2 * area / perimeter
+                )  # approximation of stroke width
+
+        # Stroke characteristics
+        features.extend(
+            [
+                np.mean(stroke_widths) if stroke_widths else 0,  # average stroke width
+                np.std(stroke_widths)
+                if stroke_widths
+                else 0,  # stroke width consistency
+                np.mean(
+                    [cv2.arcLength(cnt, True) for cnt in contours]
+                ),  # average stroke length
+                np.std(
+                    [cv2.arcLength(cnt, True) for cnt in contours]
+                ),  # stroke length variation
+                np.mean(
+                    [cv2.contourArea(cnt) for cnt in contours]
+                ),  # average stroke area
+                np.std(
+                    [cv2.contourArea(cnt) for cnt in contours]
+                ),  # stroke area variation
+                len(contours),  # number of strokes
+                sum([cv2.contourArea(cnt) for cnt in contours])
+                / (word_img.shape[0] * word_img.shape[1]),  # ink density
+            ]
+        )
+
         return np.array(features)
 
     def extract_pixel_distribution(self, word_img):
+        # Convert to grayscale
         gray = cv2.cvtColor(word_img, cv2.COLOR_BGR2GRAY)
-        h, w = gray.shape
 
-        cell_h, cell_w = h // 3, w // 3
-        densities = []
+        # Get baseline and x-height
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        h, w = binary.shape
 
-        for i in range(3):
-            for j in range(3):
-                cell = gray[
-                    i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w
-                ]
-                density = np.sum(cell < 128) / (cell_h * cell_w)
-                densities.append(density)
+        # Horizontal projection for baseline analysis
+        h_proj = np.sum(binary, axis=1) / w
 
-        return np.array(densities)
+        features = []
+        # Height zones (capturing ascenders, x-height, baseline, descenders)
+        n_zones = 4
+        zone_h = h // n_zones
+        for i in range(n_zones):
+            zone = binary[i * zone_h : (i + 1) * zone_h, :]
+            features.append(np.sum(zone) / (zone_h * w))
+
+        # Vertical spacing analysis
+        v_proj = np.sum(binary, axis=0) / h
+        features.append(np.std(v_proj))  # letter spacing consistency
+
+        return np.array(features)
 
     def estimate_slant(self, word_img):
         gray = cv2.cvtColor(word_img, cv2.COLOR_BGR2GRAY)
@@ -175,18 +218,81 @@ class HandwritingAnalyzer:
         lines = cv2.HoughLines(edges, 1, np.pi / 180, 30)
 
         if lines is None:
-            return np.zeros(2)
+            return np.zeros(4)
 
         angles = []
         for rho, theta in lines[:, 0]:
             angle = theta * 180 / np.pi
+            # Focus on vertical strokes for slant analysis
             if 45 <= angle <= 135:
                 angles.append(angle - 90)
 
         if not angles:
-            return np.zeros(2)
+            return np.zeros(4)
 
-        return np.array([np.mean(angles), np.std(angles)])
+        # Slant characteristics
+        return np.array(
+            [
+                np.mean(angles),  # average slant
+                np.std(angles),  # slant consistency
+                np.percentile(angles, 25),  # lower quartile
+                np.percentile(angles, 75),  # upper quartile
+            ]
+        )
+
+    def extract_letter_spacing(self, word_img):
+        # New method for letter spacing analysis
+        gray = cv2.cvtColor(word_img, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        # Vertical projection profile
+        v_proj = np.sum(binary, axis=0)
+
+        # Find letter spacing through zero crossings
+        zero_crossings = np.where(np.diff(np.signbit(v_proj)))[0]
+        if len(zero_crossings) > 1:
+            spacings = np.diff(zero_crossings)
+            return np.array([np.mean(spacings), np.std(spacings)])
+        return np.array([0, 0])
+
+    def process_page(self, word_regions):
+        if not word_regions:
+            return self.get_default_fisher_vector()
+
+        all_features = []
+        for word_img in word_regions:
+            try:
+                contour_feats = self.extract_contour_features(
+                    word_img
+                )  # stroke characteristics
+                pixel_feats = self.extract_pixel_distribution(
+                    word_img
+                )  # height zones and spacing
+                slant_feats = self.estimate_slant(word_img)  # consistency of slant
+                spacing_feats = self.extract_letter_spacing(word_img)  # letter spacing
+
+                # Combine all handwriting-specific features
+                combined_features = np.concatenate(
+                    [
+                        contour_feats,  # stroke width, length, consistency
+                        pixel_feats,  # zones and density
+                        slant_feats,  # writing angle
+                        spacing_feats,  # letter spacing
+                    ]
+                )
+
+                all_features.append(combined_features)
+            except Exception as e:
+                print(f"Error processing word region: {e}")
+                continue
+
+        if not all_features:
+            return self.get_default_fisher_vector()
+
+        all_features = np.array(all_features)
+        fisher_vector = self.compute_fisher_vector(all_features)
+
+        return fisher_vector
 
     def extract_cnn_features(self, word_img):
         img_tensor = self.transform(word_img).unsqueeze(0).to(self.device)
@@ -228,34 +334,6 @@ class HandwritingAnalyzer:
 
         return fv
 
-    def process_page(self, word_regions):
-        if not word_regions:
-            return self.get_default_fisher_vector()
-
-        all_features = []
-        for word_img in word_regions:
-            contour_feats = self.extract_contour_features(word_img)
-            pixel_feats = self.extract_pixel_distribution(word_img)
-            slant_feats = self.estimate_slant(word_img)
-            cnn_feats = self.extract_cnn_features(word_img)
-
-            combined_features = np.concatenate(
-                [contour_feats, pixel_feats, slant_feats, cnn_feats]
-            )
-            all_features.append(combined_features)
-
-        all_features = np.array(all_features)
-        fisher_vector = self.compute_fisher_vector(all_features)
-
-        return fisher_vector
-
-    def compare_pages(self, page1_vector, page2_vector):
-        similarity = F.cosine_similarity(
-            torch.tensor(page1_vector).unsqueeze(0),
-            torch.tensor(page2_vector).unsqueeze(0),
-        ).item()
-        return similarity
-
 
 def process_document(document_path, analyzer):
     document_path = Path(document_path)
@@ -270,35 +348,65 @@ def process_document(document_path, analyzer):
     return page_vectors
 
 
+# if __name__ == "__main__":
+#     analyzer = HandwritingAnalyzer()
+#     doc1_path = "../../data/plgrzr_output/prz_0g3lbkdl"
+#     doc2_path = "../../data/plgrzr_output/prz_0g3lbkdl"
+
+#     doc1_vectors = process_document(doc1_path, analyzer)
+#     doc2_vectors = process_document(doc2_path, analyzer)
+
+#     similarities = []
+#     for i, (vec1, vec2) in enumerate(zip(doc1_vectors, doc2_vectors)):
+#         similarity = analyzer.compare_pages(vec1, vec2)
+#         print(f"Similarity between page {i+1}: {similarity:.3f}")
+#         similarities.append(similarity)
+
+#     avg_similarity = np.mean(similarities) if similarities else 0
+#     print(f"\nOverall document similarity: {avg_similarity:.3f}")
+# if __name__ == "__main__":
+#     analyzer = HandwritingAnalyzer()
+#     doc_path = "../../data/plgrzr_output/prz_0g3lbkdl"
+
+#     doc_vectors = process_document(doc_path, analyzer)
+
+#     similarities = []
+#     n_pages = len(doc_vectors)
+
+#     for i in range(n_pages):
+#         for j in range(i + 1, n_pages):
+#             similarity = analyzer.compare_pages(doc_vectors[i], doc_vectors[j])
+#             print(f"Similarity between page {i+1} and page {j+1}: {similarity:.3f}")
+#             similarities.append(similarity)
+
+#     avg_similarity = np.mean(similarities) if similarities else 0
+#     print(f"\nAverage similarity between different pages: {avg_similarity:.3f}")
 if __name__ == "__main__":
     analyzer = HandwritingAnalyzer()
     doc1_path = "../../data/plgrzr_output/prz_0g3lbkdl"
-    doc2_path = "../../data/plgrzr_output/prz_0g3lbkdl"
+    doc2_path = "../../data/plgrzr_output/prz_0kz7m6jv"
 
     doc1_vectors = process_document(doc1_path, analyzer)
     doc2_vectors = process_document(doc2_path, analyzer)
 
-    all_similarities = []
-    max_similarities = []
+    n_pages1 = len(doc1_vectors)
+    n_pages2 = len(doc2_vectors)
+    similarities = []
 
-    for i, vec1 in enumerate(doc1_vectors):
-        page_similarities = []
-        for j, vec2 in enumerate(doc2_vectors):
-            similarity = analyzer.compare_pages(vec1, vec2)
+    print("Cross-document page similarities:")
+    for i in range(n_pages1):
+        for j in range(n_pages2):
+            similarity = analyzer.compare_pages(doc1_vectors[i], doc2_vectors[j])
             print(
                 f"Similarity between doc1_page{i+1} and doc2_page{j+1}: {similarity:.3f}"
             )
-            page_similarities.append(similarity)
-            all_similarities.append(similarity)
+            similarities.append(similarity)
 
-        if page_similarities:
-            max_similarities.append(max(page_similarities))
+    avg_similarity = np.mean(similarities) if similarities else 0
+    max_similarity = max(similarities) if similarities else 0
+    min_similarity = min(similarities) if similarities else 0
 
-    avg_similarity = np.mean(all_similarities) if all_similarities else 0
-    max_similarity = np.max(all_similarities) if all_similarities else 0
-    avg_max_similarity = np.mean(max_similarities) if max_similarities else 0
-
-    print("\nDocument Similarity Scores:")
-    print(f"Average similarity across all pages: {avg_similarity:.3f}")
+    print("\nSimilarity Statistics:")
+    print(f"Average similarity between documents: {avg_similarity:.3f}")
     print(f"Maximum similarity found: {max_similarity:.3f}")
-    print(f"Average of maximum page similarities: {avg_max_similarity:.3f}")
+    print(f"Minimum similarity found: {min_similarity:.3f}")
