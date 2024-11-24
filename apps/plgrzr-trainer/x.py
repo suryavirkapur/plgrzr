@@ -278,9 +278,27 @@ if __name__ == "__main__":
     doc1_vectors = process_document(doc1_path, analyzer)
     doc2_vectors = process_document(doc2_path, analyzer)
 
+    all_similarities = []
+    max_similarities = []
+
     for i, vec1 in enumerate(doc1_vectors):
+        page_similarities = []
         for j, vec2 in enumerate(doc2_vectors):
             similarity = analyzer.compare_pages(vec1, vec2)
             print(
                 f"Similarity between doc1_page{i+1} and doc2_page{j+1}: {similarity:.3f}"
             )
+            page_similarities.append(similarity)
+            all_similarities.append(similarity)
+
+        if page_similarities:
+            max_similarities.append(max(page_similarities))
+
+    avg_similarity = np.mean(all_similarities) if all_similarities else 0
+    max_similarity = np.max(all_similarities) if all_similarities else 0
+    avg_max_similarity = np.mean(max_similarities) if max_similarities else 0
+
+    print("\nDocument Similarity Scores:")
+    print(f"Average similarity across all pages: {avg_similarity:.3f}")
+    print(f"Maximum similarity found: {max_similarity:.3f}")
+    print(f"Average of maximum page similarities: {avg_max_similarity:.3f}")
