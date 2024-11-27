@@ -1,0 +1,10 @@
+robyn
+pytesseract
+numpy
+pdf2image
+scikit-learn
+nltk
+sentence-transformers
+torch
+torchvision
+poppler-utils

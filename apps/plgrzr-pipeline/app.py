@@ -1,9 +1,6 @@
 from robyn import Robyn, Request, Response, jsonify, ALLOW_CORS
-import os
-import cv2
 import pytesseract
 import numpy as np
-from PIL import Image
 from pdf2image import convert_from_bytes
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -14,7 +11,6 @@ from sentence_transformers import SentenceTransformer
 import torch
 import torchvision.models as models
 import torchvision.transforms as transforms
-import json
 
 # Initialize the Robyn app
 app = Robyn(__file__)
@@ -55,6 +51,7 @@ print("Loading Sentence Transformer model...")
 model_name = "all-MiniLM-L6-v2"
 sentence_model = SentenceTransformer(model_name, device=device)
 
+
 # Function to generate fixed grid segments
 def generate_grid_segments(img, rows=3, cols=3):
     """
@@ -82,9 +79,11 @@ def generate_grid_segments(img, rows=3, cols=3):
             segments.append(segment)
     return segments
 
+
 # Number of rows and columns in the grid
 ROWS = 3  # Adjust as needed
 COLS = 3  # Adjust as needed
+
 
 # Endpoint to compare two PDFs
 @app.post("/compare_pdfs")
@@ -110,11 +109,12 @@ async def compare_pdfs(request: Request) -> Response:
         print(f"Error: {e}")
         return jsonify({"error": str(e)})
 
+
 # Function to process PDFs
 def process_pdfs(pdf1_data, pdf2_data):
     # Dictionaries to store data
-    pdf_texts = {}      # Text content per PDF per segment
-    pdf_features = {}   # Image features per PDF per segment
+    pdf_texts = {}  # Text content per PDF per segment
+    pdf_features = {}  # Image features per PDF per segment
 
     pdf_datas = [pdf1_data, pdf2_data]
     pdf_names = ["PDF 1", "PDF 2"]
@@ -149,7 +149,7 @@ def process_pdfs(pdf1_data, pdf2_data):
         anomalies[pdf_name] = anomaly
 
     # Visual Similarity Analysis between corresponding segments
-    num_pdfs = len(pdf_names)
+    len(pdf_names)
     num_segments = ROWS * COLS
 
     # Initialize similarity matrices for segments
@@ -191,10 +191,7 @@ def process_pdfs(pdf1_data, pdf2_data):
     for seg_idx in range(num_segments):
         sim = segment_similarity_matrix[seg_idx]
         if sim >= visual_threshold:
-            visual_similar_segments.append({
-                "segment": seg_idx + 1,
-                "similarity": sim
-            })
+            visual_similar_segments.append({"segment": seg_idx + 1, "similarity": sim})
     results["visual_similarity"]["similar_segments"] = visual_similar_segments
 
     # Semantic Similarity Results
@@ -202,13 +199,13 @@ def process_pdfs(pdf1_data, pdf2_data):
     for seg_idx in range(num_segments):
         sim = segment_text_similarity_matrix[seg_idx]
         if sim >= semantic_threshold:
-            semantic_similar_segments.append({
-                "segment": seg_idx + 1,
-                "similarity": sim
-            })
+            semantic_similar_segments.append(
+                {"segment": seg_idx + 1, "similarity": sim}
+            )
     results["semantic_similarity"]["similar_segments"] = semantic_similar_segments
 
     return results
+
 
 # Function for handwriting anomaly detection
 def detect_handwriting_anomalies(features_list):
@@ -236,6 +233,7 @@ def detect_handwriting_anomalies(features_list):
     else:
         return False
 
+
 # Function for textual inconsistency detection
 def detect_textual_inconsistencies(texts):
     if len(texts) < 2:
@@ -251,6 +249,7 @@ def detect_textual_inconsistencies(texts):
         return True  # Inconsistency detected
     else:
         return False
+
 
 # Endpoint to detect anomalies in a single PDF
 @app.post("/detect_anomalies")
@@ -308,6 +307,7 @@ async def detect_anomalies(request: Request) -> Response:
     except Exception as e:
         print(f"Error: {e}")
         return jsonify({"error": str(e)})
+
 
 if __name__ == "__main__":
     app.start(port=8001)
