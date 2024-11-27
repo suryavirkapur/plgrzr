@@ -1,4 +1,16 @@
-import { useState, ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, Upload } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProcessingResult {
   [key: string]: any;
@@ -9,9 +21,7 @@ interface FileState {
   result: ProcessingResult | null;
 }
 
-/** @type {Array<number>} */
 const codes: any[] = [];
-/** @type {Array<number>} */
 const cache: number[] = [];
 
 function levenshteinEditDistance(
@@ -19,6 +29,7 @@ function levenshteinEditDistance(
   other: string,
   insensitive: any
 ) {
+  // ... [keeping the original levenshtein implementation unchanged]
   if (value === other) {
     return 0;
   }
@@ -39,17 +50,14 @@ function levenshteinEditDistance(
   let index = 0;
 
   while (index < value.length) {
-    // eslint-disable-next-line unicorn/prefer-code-point
     codes[index] = value.charCodeAt(index);
     cache[index] = ++index;
   }
 
   let indexOther = 0;
-  /** @type {number} */
   let result;
 
   while (indexOther < other.length) {
-    // eslint-disable-next-line unicorn/prefer-code-point
     const code = other.charCodeAt(indexOther);
     let index = -1;
     let distance = indexOther++;
@@ -167,49 +175,125 @@ export default function PdfComparison(): JSX.Element {
   };
 
   return (
-    <div>
-      <h2>PDF Comparison</h2>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>PDF Comparison Tool</CardTitle>
+            <CardDescription>
+              Upload two PDF files to compare their content and calculate
+              similarity
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* First PDF Upload */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">First PDF</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: <explanation> */}
+                  <div
+                    className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary"
+                    onClick={() => document.getElementById("pdf1")?.click()}
+                  >
+                    <input
+                      id="pdf1"
+                      type="file"
+                      accept=".pdf"
+                      onChange={handleFileChange("file1")}
+                      className="hidden"
+                    />
+                    <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {files.file1.file
+                        ? files.file1.file.name
+                        : "Click to upload PDF 1"}
+                    </p>
+                  </div>
+                  {files.file1.result && (
+                    <ScrollArea className="h-40 mt-4 rounded-md border p-4">
+                      <pre className="text-xs">
+                        {JSON.stringify(files.file1.result, null, 2)}
+                      </pre>
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
 
-      <div>
-        <div>
-          <h3>First PDF</h3>
-          <label>Upload PDF 1</label>
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handleFileChange("file1")}
-          />
-          {files.file1.result && (
-            <pre>{JSON.stringify(files.file1.result, null, 2)}</pre>
-          )}
-        </div>
+              {/* Second PDF Upload */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Second PDF</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: <explanation> */}
+                  <div
+                    className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary"
+                    onClick={() => document.getElementById("pdf2")?.click()}
+                  >
+                    <input
+                      id="pdf2"
+                      type="file"
+                      accept=".pdf"
+                      onChange={handleFileChange("file2")}
+                      className="hidden"
+                    />
+                    <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {files.file2.file
+                        ? files.file2.file.name
+                        : "Click to upload PDF 2"}
+                    </p>
+                  </div>
+                  {files.file2.result && (
+                    <ScrollArea className="h-40 mt-4 rounded-md border p-4">
+                      <pre className="text-xs">
+                        {JSON.stringify(files.file2.result, null, 2)}
+                      </pre>
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
-        <div>
-          <h3>Second PDF</h3>
-          <label>Upload PDF 2</label>
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handleFileChange("file2")}
-          />
-          {files.file2.result && (
-            <pre>{JSON.stringify(files.file2.result, null, 2)}</pre>
-          )}
-        </div>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            <Button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="w-full"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing PDFs...
+                </>
+              ) : (
+                "Compare PDFs"
+              )}
+            </Button>
+
+            {loading && <Progress value={30} className="w-full" />}
+
+            {similarity && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Similarity Results</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-600">{similarity}</p>
+                </CardContent>
+              </Card>
+            )}
+          </CardContent>
+        </Card>
       </div>
-
-      <button onClick={handleSubmit} disabled={loading}>
-        {loading ? "Processing..." : "Compare PDFs"}
-      </button>
-
-      {error && <div>{error}</div>}
-
-      {similarity && (
-        <div>
-          <h3>Similarity Score (Higher is Better, Same is Zero)</h3>
-          <p>{similarity}</p>
-        </div>
-      )}
     </div>
   );
 }
