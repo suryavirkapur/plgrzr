@@ -1,6 +1,6 @@
 numpy
 opencv-python
-torch
+torch==2.5.1
 torchvision
 scikit-learn
 matplotlib
