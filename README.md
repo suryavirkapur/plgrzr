@@ -2,7 +2,7 @@
 
 You need the following tools:
 
-* Python 3.13
+* Python 3.10
 * UV for Python Package Manager
 * Node.js 22.x
 * Rust 1.82.0
