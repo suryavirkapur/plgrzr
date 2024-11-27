@@ -7,8 +7,7 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 from torchvision import models
 from sklearn.metrics.pairwise import cosine_similarity
-import tempfile
-import os
+
 
 app = Robyn(__file__)
 ALLOW_CORS(app, origins=["*"])
